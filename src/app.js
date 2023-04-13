@@ -1,8 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
 import dayjs from 'dayjs';
+import Joi from 'joi';
 
 const app=express();
 dotenv.config();
@@ -12,8 +13,31 @@ const mongoClient=new MongoClient(process.env.DATABASE_URL);
 
 let db;
 mongoClient.connect()
-    .then(()=>db=mongoClient.db())
+    .then(()=>{
+        db=mongoClient.db()
+        db.collection('participants').drop()
+            .then(resp=>console.log('limpeza de participantes '+resp))
+            .catch(err=>console.log(err));
+    })
     .catch(err=>console.log(err));
+
+
+
+const joiSchemes={
+    postParticipant: Joi.object({
+        name: Joi.string()
+            .min(3)
+            .max(30)
+            .required()
+    }),
+    getMessages: Joi.object()
+
+};
+
+
+// db.collection('participants').drop()
+//     .then(resp=>console.log('limpeza de participantes '+resp))
+//     .catch(err=>console.log(err));
 
 
 
@@ -50,7 +74,7 @@ app.post('/participants', (req, res)=>{
 
 app.get('/messages', (req, res)=>{
     const user=req.headers.user;
-    const {limit}=req.params;
+    const {limit}=req.query;
     if(limit!==undefined && (limit<=0 || Number(limit)===NaN)) return res.status(422).send('query invalida');
     db.collection('messages').find({$or: [{type: 'message'}, {to: 'Todos'}, {from: user}, {to: user}]}).toArray()
         .then((messages)=>res.send(messages))
@@ -79,17 +103,37 @@ app.post('/messages', (req, res)=>{
 
 });
 
-app.get('/status', (req, res)=>{
-
+app.post('/status', (req, res)=>{
+    const {user}=req.headers.user;
+    if(!user) return res.sendStatus(404);
+    db.collection('participants').findOne({name: user})
+        .then(search=>{
+            if(!search) return res.sendStatus(404);
+            //atualizar lastseen
+        })
+        .catch(err=>res.status(500).send(err));
 });
 
 app.delete('/messages/:id', (req, res)=>{
     const {id}=req.params;
-
+    const {user}=req.headers;
+    db.collection('messages').findOne({_id: new ObjectId(id)})
+        .then(search=>{
+            if(!search) return res.sendStatus(404);
+            if(search.from !== user) return res.sendStatus(401);
+            db.collection('messages').deleteOne(search)
+                .then(resp=>res.send(resp))
+                .catch(err=>res.status(500).send(err));
+        })
+        .catch(err=>res.status(500).send(err));
+        
 });
 
 app.put('/messages/:id', (req, res)=>{
     const {id}=req.params;
+    const {user}=req.headers;
+    const {to, text, type}=req.body;
+    
 
 });
 
