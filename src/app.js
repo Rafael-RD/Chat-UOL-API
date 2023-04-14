@@ -11,17 +11,22 @@ app.use(express.json());
 
 const mongoClient = new MongoClient(process.env.DATABASE_URL);
 
-let db;
-mongoClient.connect()
-    .then(() => {
-        db = mongoClient.db()
-        db.collection('participants').deleteMany()
-            .then(resp => console.log('limpeza de participantes ' + resp.deletedCount))
-            .catch(err => console.log(err));
-    })
-    .catch(err => console.log(err));
 
+try {
+    await mongoClient.connect();
+    console.log('MongoDB connected');
+} catch (err) {
+    console.log(err)
+}
 
+const db = mongoClient.db();
+
+try {
+    const { deletedCount } = await db.collection('participants').deleteMany();
+    console.log('Limpeza de participantes ' + deletedCount);
+} catch (err) {
+    console.log(err);
+}
 
 const joiSchemes = {
     postParticipant: Joi.object({
@@ -34,84 +39,124 @@ const joiSchemes = {
 
 };
 
+setInterval(async () => {
+    try{
+        const toRemove=await db.collection('participants').find({lastStatus: {$lt: Date.now()-10000 }}).toArray();
+        if(toRemove.length===0) return console.log('0 removidos');
+        const {deletedCount}=await db.collection('participants').deleteMany({name: {$in: toRemove.map(e=>e.name)}});
+        console.log("Inativos deletados: "+deletedCount);
+        try{
+            await db.collection('messages').insertMany(toRemove.map(e=>{
+                return { 
+                    from: e.name,
+                    to: 'Todos',
+                    text: 'sai da sala...',
+                    type: 'status',
+                    time: dayjs().format('HH:mm:ss')
+                }
+            }))
+        }catch(err){
+            console.log(err);
+        }
+    }catch (err) {
+        console.log(err);
+    }
 
-// db.collection('participants').drop()
-//     .then(resp=>console.log('limpeza de participantes '+resp))
-//     .catch(err=>console.log(err));
-
+}, 15000);
 
 
 app.get('/participants', async (req, res) => {
-    db.collection('participants').find().toArray()
-        .then((participants) => res.send(participants))
-        .catch(err => res.status(500).send(err));
+    try {
+        const participants = await db.collection('participants').find().toArray();
+        return res.send(participants);
+    } catch (err) {
+        console.log(err);
+        return res.sendStatus(500);
+    }
 });
 
 app.post('/participants', async (req, res) => {
     const { name } = req.body;
-    if (!name || typeof (name) !== 'string') return res.sendStatus(422);
-    db.collection('participants').findOne({ name })
-        .then(search => {
-            if (search) return res.sendStatus(409);
-            else {
-                db.collection('participants').insertOne({ name, lastStatus: Date.now() })
-                    .then(() => {
-                        db.collection('messages').insertOne({ from: name, to: 'Todos', text: 'entra na sala...', type: 'status', time: dayjs().format('HH:mm:ss') })
-                            .then(() => res.sendStatus(201))
-                            .catch(err => res.status(500).send(err));
-                    })
-                    .catch(err => res.status(500).send(err));
-            }
-        })
-    // db.collection('participants').insertOne({name, lastStatus: Date.now()})
-    //     .then(()=>{
-    //         db.collection('messages').insertOne({from: name, to: 'Todos', text: 'entra na sala...', type: 'status', time: dayjs().format('HH:mm:ss')})
-    //             .then(()=>res.sendStatus(201))
-    //             .catch(err=>res.status(500).send(err));
-    //     })
-    //     .catch(err=>res.status(500).send(err));
+    if (!name || typeof (name) !== 'string') return res.sendStatus(422); //joi
+
+    try {
+        const search = await db.collection('participants').findOne({ name });
+        if (search) return res.sendStatus(409);
+        await db.collection('participants').insertOne({ name, lastStatus: Date.now() });
+        await db.collection('messages').insertOne({
+            from: name,
+            to: 'Todos',
+            text: 'entra na sala...',
+            type: 'status',
+            time: dayjs().format('HH:mm:ss')
+        });
+        return res.sendStatus(201);
+    } catch (err) {
+        console.log(err);
+        return res.sendStatus(500);
+    }
 });
 
 app.get('/messages', async (req, res) => {
     const user = req.headers.user;
     const { limit } = req.query;
     if (limit !== undefined && (limit <= 0 || Number(limit) === NaN)) return res.status(422).send('query invalida');
-    db.collection('messages').find({ $or: [{ type: 'message' }, { to: 'Todos' }, { from: user }, { to: user }] }).toArray()
-        .then((messages) => res.send(messages))
-        .catch(err => res.status(500).send(err));
+    try{
+        const messages=await db.collection('messages').find({ $or: [{ type: 'message' }, { to: 'Todos' }, { from: user }, { to: user }] }).toArray();
+        return res.send(messages);
+    }catch (err) {
+        console.log(err);
+        return res.sendStatus(500);
+    }
 });
+
+// app.delete('/messages', async (req, res)=>{
+//     try {
+//         const {deletedCount}=await db.collection('messages').deleteMany();
+//         return res.send(deletedCount.toFixed());
+//     } catch (err) {
+//         console.log(err);
+//         return res.sendStatus(500);
+//     }
+// })
 
 app.post('/messages', async (req, res) => {
     const { to, text, type } = req.body;
     const from = req.headers.user;
-    db.collection('participants').findOne({ name: from })
-        .then(search => {
-            if (!search) return res.status(422).send('Remetente deve ser valido');
-            else {
-                if (!to || typeof (to) !== 'string') return res.status(422).send('Destinatario deve ser valido');
-                if (!text || typeof (text) !== 'string') return res.status(422).send('Mensagem deve ser valida');
-                if (!(type === 'message' || type === 'private_message')) return res.status(422).send('Tipo deve ser valido');
-                db.collection('messages').insertOne({ from, to, text, type, time: dayjs().format('HH:mm:ss') })
-                    .then(() => res.sendStatus(201))
-                    .catch(err => res.status(500).send(err));
-            }
-        })
-        .catch(err => res.status(500).send(err));
-    // if(!to || typeof(to)!=='string') return res.status(422).send('Destinatario deve ser valido');
-    // if(!text || typeof(text)!=='string') return res.status(422).send('Mensagem deve ser valida');
-    // if(!from || typeof(from)!=='string' || ) return res.status(422).send('Remetente deve ser valido');
 
+    try{
+        const search=await db.collection('participants').findOne({ name: from });
+        if (!search) return res.status(422).send('Remetente deve ser valido'); 
+        if (!to || typeof (to) !== 'string') return res.status(422).send('Destinatario deve ser valido'); //joi
+        if (!text || typeof (text) !== 'string') return res.status(422).send('Mensagem deve ser valida'); 
+        if (!(type === 'message' || type === 'private_message')) return res.status(422).send('Tipo deve ser valido');
+        await db.collection('messages').insertOne({ 
+            from, 
+            to, 
+            text, 
+            type, 
+            time: dayjs().format('HH:mm:ss') 
+        });
+        return res.sendStatus(201);
+    }catch (err) {
+        console.log(err);
+        return res.sendStatus(500);
+    }
 });
 
 app.post('/status', async (req, res) => {
-    const { user } = req.headers.user;
-    if (!user) return res.sendStatus(404);
-    db.collection('participants').findOne({ name: user })
-        .then(search => {
-            if (!search) return res.sendStatus(404);
-            //atualizar lastseen
-        })
-        .catch(err => res.status(500).send(err));
+    const { user } = req.headers;
+    if (!user || typeof(user)!== 'string') return res.sendStatus(404); //joi
+    try{
+        const search=await db.collection('participants').findOne({ name: user });
+        console.log(search);
+        if(!search) return res.sendStatus(404);
+        await db.collection('participants').updateOne(search, {$set: {lastStatus: Date.now() }});
+        return res.sendStatus(200);
+    }catch (err) {
+        console.log(err);
+        return res.sendStatus(500);
+    }
 });
 
 app.delete('/messages/:id', async (req, res) => {
@@ -138,17 +183,16 @@ app.put('/messages/:id', async (req, res) => {
     if (text) updMessage.text = text;
     if (type) updMessage.type = type;
 
-    try{
-        const search = await db.collection('messages').findOne({_id: new ObjectId(id)});
-        if(!search) return res.sendStatus(404);
-        if(search.from !== user) return res.sendStatus(403);
-        const updLog= await db.collection('messages').updateOne({_id: new ObjectId(id)}, {$set: updMessage});
+    try {
+        const search = await db.collection('messages').findOne({ _id: new ObjectId(id) });
+        if (!search) return res.sendStatus(404);
+        if (search.from !== user) return res.sendStatus(403);
+        const updLog = await db.collection('messages').updateOne({ _id: new ObjectId(id) }, { $set: updMessage });
         console.log(updLog);
         return res.sendStatus(200);
-    }catch(err){
-        res.sendStatus(500);
+    } catch (err) {
         console.log(err);
-        return err;
+        return res.sendStatus(500);
     }
 
 });
