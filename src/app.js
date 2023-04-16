@@ -54,18 +54,11 @@ try {
 
 const db = mongoClient.db();
 
-// try {
-//     const { deletedCount } = await db.collection('participants').deleteMany();
-//     console.log('Limpeza de participantes ' + deletedCount);
-// } catch (err) {
-//     console.log(err);
-// }
-
 
 setInterval(async () => {
     try{
         const toRemove=await db.collection('participants').find({lastStatus: {$lt: Date.now()-10000 }}).toArray();
-        if(toRemove.length===0) return; //console.log('0 removidos');
+        if(toRemove.length===0) return;
         const {deletedCount}=await db.collection('participants').deleteMany({name: {$in: toRemove.map(e=>e.name)}});
         console.log("Inativos deletados: "+deletedCount);
         try{
@@ -103,8 +96,6 @@ app.post('/participants', async (req, res) => {
     const validation=joiSchemes.postParticipant.validate({name});
     if(validation.error) return res.sendStatus(422);
 
-    // if (!name || typeof (name) !== 'string') return res.sendStatus(422); //joi
-
     try {
         const search = await db.collection('participants').findOne({ name: validation.value.name });
         if (search) return res.sendStatus(409);
@@ -136,15 +127,6 @@ app.get('/messages', async (req, res) => {
     }
 });
 
-// app.delete('/messages', async (req, res)=>{
-//     try {
-//         const {deletedCount}=await db.collection('messages').deleteMany();
-//         return res.send(deletedCount.toFixed());
-//     } catch (err) {
-//         console.log(err);
-//         return res.sendStatus(500);
-//     }
-// })
 
 app.post('/messages', async (req, res) => {
     const { to, text, type } = req.body;
@@ -155,9 +137,6 @@ app.post('/messages', async (req, res) => {
     try{
         const search=await db.collection('participants').findOne({ name: validation.value.from });
         if (!search) return res.status(422).send('Remetente deve ser valido'); 
-        //if (!to || typeof (to) !== 'string') return res.status(422).send('Destinatario deve ser valido'); //joi
-        //if (!text || typeof (text) !== 'string') return res.status(422).send('Mensagem deve ser valida'); 
-        // if (!(type === 'message' || type === 'private_message')) return res.status(422).send('Tipo deve ser valido');
         await db.collection('messages').insertOne({ 
             from: validation.value.from, 
             to: validation.value.to, 
@@ -176,7 +155,6 @@ app.post('/status', async (req, res) => {
     const { user } = req.headers;
     const validation=joiSchemes.postStatus.validate({user});
     if(validation.error) return res.status(422).send(validation.error.map(det=>det.message));
-    // if (!user || typeof(user)!== 'string') return res.sendStatus(404); //joi
     try{
         const search=await db.collection('participants').findOne({ name: validation.value.user });
         if(!search) return res.sendStatus(404);
