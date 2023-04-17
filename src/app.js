@@ -111,8 +111,8 @@ app.post('/participants', async (req, res) => {
 
 app.get('/messages', async (req, res) => {
     const user = stripHtml(req.headers.user).result.trim();
-    const { limit } = req.query;
-    if (limit !== undefined && (limit <= 0 || Number(limit) === NaN)) return res.status(422).send('query invalida');
+    const limit = Number(req.query.limit);
+    if (limit !== undefined && (limit <= 0 || isNaN(limit))) return res.status(422).send('query invalida');
     try{
         const messages=await db.collection('messages').find({ $or: [{ type: 'message' }, { to: 'Todos' }, { from: user }, { to: user }] }).toArray();
         if(limit) return res.send(messages.slice(-limit));
