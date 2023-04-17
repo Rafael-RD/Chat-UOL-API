@@ -11,35 +11,31 @@ dotenv.config();
 app.use(express.json());
 app.use(cors());
 
-function applyStripHtml(joiStrig){
-    return stripHtml(joiStrig).result;
-}
-
 const mongoClient = new MongoClient(process.env.DATABASE_URL);
 
 const joiSchemes = {
     postParticipant: Joi.object({
-        name: Joi.string().min(3).max(30).required().custom(applyStripHtml).trim()
+        name: Joi.string().min(3).max(30).required().trim()
     }),
     getMessages: Joi.object({
-        user: Joi.string().min(3).max(30).required().custom(applyStripHtml).trim(),
+        user: Joi.string().min(3).max(30).required().trim(),
         limit: Joi.number().integer().min(1)
     }),
     postMessages: Joi.object({
-        to: Joi.string().min(3).max(30).required().custom(applyStripHtml).trim(),
-        text: Joi.string().min(1).required().custom(applyStripHtml).trim(),
+        to: Joi.string().min(3).max(30).required().trim(),
+        text: Joi.string().min(1).required().trim(),
         type: Joi.string().valid('message','private_message').required(),
-        from: Joi.string().required().custom(applyStripHtml).trim()
+        from: Joi.string().required().trim()
     }),
     putMessages: Joi.object({
         id: Joi.string().hex().required(),
-        to: Joi.string().min(3).max(30).custom(applyStripHtml).trim(),
-        text: Joi.string().min(1).custom(applyStripHtml).trim(),
+        to: Joi.string().min(3).max(30).trim(),
+        text: Joi.string().min(1).trim(),
         type: Joi.string().valid('message','private_message'),
-        from: Joi.string().required().custom(applyStripHtml).trim()
+        from: Joi.string().required().trim()
     }),
     postStatus: Joi.object({
-        user: Joi.string().required().custom(applyStripHtml).trim()
+        user: Joi.string().required().trim()
     })
 
 };
@@ -91,7 +87,7 @@ app.get('/participants', async (req, res) => {
 });
 
 app.post('/participants', async (req, res) => {
-    const {name} = req.body;
+    const name = stripHtml(req.body.name).result;
     const validation=joiSchemes.postParticipant.validate({name});
     if(validation.error) return res.sendStatus(422);
 
@@ -129,10 +125,14 @@ app.get('/messages', async (req, res) => {
 
 
 app.post('/messages', async (req, res) => {
-    const { to, text, type } = req.body;
-    const from = req.headers.user;
-
-    const validation=joiSchemes.postMessages.validate({to, text, type, from});
+    // const { to, text, type } = req.body;
+    // const from = req.headers.user;
+    const to=stripHtml(req.body.to).result;
+    const text=stripHtml(req.body.text).result;
+    const from=stripHtml(req.headers.user).result;
+    const type=req.body.type;
+    
+    const validation=joiSchemes.postMessages.validate({to, text, type, from},{abortEarly: false});
     if(validation.error) return res.status(422).send(validation.error.details.map(det=>det.message));
     try{
         const search=await db.collection('participants').findOne({ name: validation.value.from });
@@ -152,7 +152,7 @@ app.post('/messages', async (req, res) => {
 });
 
 app.post('/status', async (req, res) => {
-    const { user } = req.headers;
+    const user= stripHtml(req.headers.user).result;
     const validation=joiSchemes.postStatus.validate({user});
     if(validation.error) return res.status(422).send(validation.error.map(det=>det.message));
     try{
@@ -168,7 +168,7 @@ app.post('/status', async (req, res) => {
 
 app.delete('/messages/:id', async (req, res) => {
     const { id } = req.params;
-    const { user } = req.headers;
+    const user = stripHtml(req.headers.user).result;
     db.collection('messages').findOne({ _id: new ObjectId(id) })
         .then(search => {
             if (!search) return res.sendStatus(404);
@@ -183,10 +183,17 @@ app.delete('/messages/:id', async (req, res) => {
 
 app.put('/messages/:id', async (req, res) => {
     const { id } = req.params;
-    const { user: from } = req.headers;
-    const { to, text, type } = req.body;
+    // const { user: from } = req.headers;
+    // const { to, text, type } = req.body;
+
+    const to=stripHtml(req.body.to).result;
+    const text=stripHtml(req.body.text).result;
+    const from=stripHtml(req.headers.user).result;
+    const type=req.body.type;
+
+
     
-    const validation=joiSchemes.putMessages.validate({id, to, text, type, from});
+    const validation=joiSchemes.putMessages.validate({id, to, text, type, from},{abortEarly: false});
     if(validation.error) return res.status(422).send(validation.error.details.map(det=>det.message));
 
     const updMessage = {};
@@ -197,7 +204,7 @@ app.put('/messages/:id', async (req, res) => {
     try {
         const search = await db.collection('messages').findOne({ _id: new ObjectId(id) });
         if (!search) return res.sendStatus(404);
-        if (search.from !== validation.value.from) return res.sendStatus(403);
+        if (search.from !== validation.value.from) return res.sendStatus(401);
         const updLog = await db.collection('messages').updateOne({ _id: new ObjectId(id) }, { $set: updMessage });
         return res.sendStatus(200);
     } catch (err) {
