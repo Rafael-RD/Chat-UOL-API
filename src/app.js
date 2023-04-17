@@ -13,6 +13,12 @@ app.use(cors());
 
 const mongoClient = new MongoClient(process.env.DATABASE_URL);
 
+function applyStripHtml(target){
+    if(typeof(target)==='string') return stripHtml(target).result;
+    else return target;
+}
+
+
 const joiSchemes = {
     postParticipant: Joi.object({
         name: Joi.string().min(3).max(30).required().trim()
@@ -87,7 +93,7 @@ app.get('/participants', async (req, res) => {
 });
 
 app.post('/participants', async (req, res) => {
-    const name = stripHtml(req.body.name).result;
+    const name = applyStripHtml(req.body.name);
     const validation=joiSchemes.postParticipant.validate({name});
     if(validation.error) return res.sendStatus(422);
 
@@ -110,7 +116,7 @@ app.post('/participants', async (req, res) => {
 });
 
 app.get('/messages', async (req, res) => {
-    const user = stripHtml(req.headers.user).result.trim();
+    const user = applyStripHtml(req.headers.user).trim();
     const limit = Number(req.query.limit);
     if (limit !== undefined && (limit <= 0 || isNaN(limit))) return res.status(422).send('query invalida');
     try{
@@ -127,9 +133,9 @@ app.get('/messages', async (req, res) => {
 app.post('/messages', async (req, res) => {
     // const { to, text, type } = req.body;
     // const from = req.headers.user;
-    const to=stripHtml(req.body.to).result;
-    const text=stripHtml(req.body.text).result;
-    const from=stripHtml(req.headers.user).result;
+    const to=applyStripHtml(req.body.to);
+    const text=applyStripHtml(req.body.text);
+    const from=applyStripHtml(req.headers.user);
     const type=req.body.type;
     
     const validation=joiSchemes.postMessages.validate({to, text, type, from},{abortEarly: false});
@@ -152,7 +158,7 @@ app.post('/messages', async (req, res) => {
 });
 
 app.post('/status', async (req, res) => {
-    const user= stripHtml(req.headers.user).result;
+    const user= applyStripHtml(req.headers.user);
     const validation=joiSchemes.postStatus.validate({user});
     if(validation.error) return res.status(422).send(validation.error.map(det=>det.message));
     try{
@@ -168,7 +174,7 @@ app.post('/status', async (req, res) => {
 
 app.delete('/messages/:id', async (req, res) => {
     const { id } = req.params;
-    const user = stripHtml(req.headers.user).result;
+    const user = applyStripHtml(req.headers.user);
     db.collection('messages').findOne({ _id: new ObjectId(id) })
         .then(search => {
             if (!search) return res.sendStatus(404);
@@ -186,9 +192,9 @@ app.put('/messages/:id', async (req, res) => {
     // const { user: from } = req.headers;
     // const { to, text, type } = req.body;
 
-    const to=stripHtml(req.body.to).result;
-    const text=stripHtml(req.body.text).result;
-    const from=stripHtml(req.headers.user).result;
+    const to=applyStripHtml(req.body.to);
+    const text=applyStripHtml(req.body.text);
+    const from=applyStripHtml(req.headers.user);
     const type=req.body.type;
 
 
