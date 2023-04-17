@@ -4,7 +4,6 @@ import { MongoClient, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
 import dayjs from 'dayjs';
 import Joi from 'joi';
-import { strict as assert } from "assert";
 import { stripHtml } from "string-strip-html";
 
 const app = express();
@@ -120,7 +119,8 @@ app.get('/messages', async (req, res) => {
     if (limit !== undefined && (limit <= 0 || Number(limit) === NaN)) return res.status(422).send('query invalida');
     try{
         const messages=await db.collection('messages').find({ $or: [{ type: 'message' }, { to: 'Todos' }, { from: user }, { to: user }] }).toArray();
-        return res.send(messages);
+        if(limit) return res.send(messages.slice(-limit));
+        else return res.send(messages);
     }catch (err) {
         console.log(err);
         return res.sendStatus(500);
