@@ -189,15 +189,11 @@ app.delete('/messages/:id', async (req, res) => {
 
 app.put('/messages/:id', async (req, res) => {
     const { id } = req.params;
-    // const { user: from } = req.headers;
-    // const { to, text, type } = req.body;
 
     const to=applyStripHtml(req.body.to);
     const text=applyStripHtml(req.body.text);
     const from=applyStripHtml(req.headers.user);
     const type=req.body.type;
-
-
     
     const validation=joiSchemes.putMessages.validate({id, to, text, type, from},{abortEarly: false});
     if(validation.error) return res.status(422).send(validation.error.details.map(det=>det.message));
@@ -211,7 +207,7 @@ app.put('/messages/:id', async (req, res) => {
         const search = await db.collection('messages').findOne({ _id: new ObjectId(id) });
         if (!search) return res.sendStatus(404);
         if (search.from !== validation.value.from) return res.sendStatus(401);
-        const updLog = await db.collection('messages').updateOne({ _id: new ObjectId(id) }, { $set: updMessage });
+        await db.collection('messages').updateOne({ _id: new ObjectId(id) }, { $set: updMessage });
         return res.sendStatus(200);
     } catch (err) {
         console.log(err);
